@@ -36,6 +36,7 @@
                     Command="{Binding CommandStop}"
                     Width="75"/>
             <Button Content="Pause"
+                    Command="{Binding CommandPause}"
                     Width="75"/>
         </StackPanel>
         

@@ -9,6 +9,7 @@ namespace AsyncExample.ViewModels;
 public class MainViewModel : ViewModelBase
 {
     private CancellationTokenSource? _cts;
+    private bool _isPaused;
     
     #region Properties
     
@@ -65,9 +66,20 @@ public class MainViewModel : ViewModelBase
             try
             {
                 _cts = new CancellationTokenSource();
+                
                 var progress = new Progress<int>();
                 progress.ProgressChanged += (_, value) => Value = value;
-                await StartAsync(progress, _cts.Token);
+
+                if (_isPaused)
+                {
+                    await StartAsync(Value, Max, progress, _cts.Token);
+                }
+                else
+                {
+                    await StartAsync(Min, Max, progress, _cts.Token);
+                }
+
+                _isPaused = false;
             }
             catch (Exception e)
             {
@@ -80,6 +92,20 @@ public class MainViewModel : ViewModelBase
             try
             {
                 await _cts?.CancelAsync();
+                _isPaused = false;
+            }
+            catch (Exception e)
+            {
+                MessageBox.Show(e.Message);
+            }
+        });
+        
+        CommandPause = new LambdaCommand(async void (_) =>
+        {
+            try
+            {
+                await _cts?.CancelAsync();
+                _isPaused = true;
             }
             catch (Exception e)
             {
@@ -90,9 +116,9 @@ public class MainViewModel : ViewModelBase
 
     #region Methods
 
-    private async Task StartAsync(IProgress<int>? progress = null, CancellationToken token = default)
+    private async Task StartAsync(int begin, int end, IProgress<int>? progress = null, CancellationToken token = default)
     {
-        for (var i = Min; i <= Max; i++)
+        for (var i = begin; i <= end; i++)
         {
             token.ThrowIfCancellationRequested();
             

@@ -1,8 +1,9 @@
 ﻿using System;
+using System.Reactive;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
-using System.Windows.Input;
+using ReactiveUI;
 
 namespace AsyncExample.ViewModels;
 
@@ -22,7 +23,7 @@ public class MainViewModel : ViewModelBase
         set
         {
             var val = Math.Abs(value);
-            SetProperty(ref _min, val);
+            this.RaiseAndSetIfChanged(ref _min, val);
         }
     }
     
@@ -33,7 +34,7 @@ public class MainViewModel : ViewModelBase
         set
         {
             var val = Math.Abs(value);
-            SetProperty(ref _max, val);
+            this.RaiseAndSetIfChanged(ref _max, val);
         }
     }
     
@@ -44,29 +45,24 @@ public class MainViewModel : ViewModelBase
         set
         {
             var val = Math.Abs(value);
-            SetProperty(ref _value, val);
+            this.RaiseAndSetIfChanged(ref _value, val);
         }
     }
     
     private bool _isRunning;
-    public bool IsRunning
+    private bool IsRunning
     {
         get => _isRunning;
-        set
-        {
-            var result = SetProperty(ref _isRunning, value);
-            
-            if (!result) return;
-        }
+        set => this.RaiseAndSetIfChanged(ref _isRunning, value);
     }
     
     #endregion
 
     #region Commands
 
-    public ICommand CommandStart { get; }
-    public ICommand CommandStop { get; }
-    public ICommand CommandPause { get; }
+    public ReactiveCommand<Unit, Unit> CommandStart { get; }
+    public ReactiveCommand<Unit, Unit> CommandStop { get; }
+    public ReactiveCommand<Unit, Unit> CommandPause { get; }
 
     #endregion
 
@@ -79,77 +75,84 @@ public class MainViewModel : ViewModelBase
         
         _progress = new Progress<int>();
         _progress.ProgressChanged += (_, value) => Value = value;
-        
-        CommandStart = new LambdaCommand(
-            execute: async void (_) =>
-        {
-            try
-            {
-                _cts = new CancellationTokenSource();
-                
-                if (_isPaused)
-                {
-                    await StartAsync(Value, Max, _progress, _cts.Token);
-                }
-                else
-                {
-                    await StartAsync(Min, Max, _progress, _cts.Token);
-                }
 
-                _isPaused = false;
-                IsRunning = true;
-            }
-            catch (Exception e)
-            {
-                MessageBox.Show(e.Message);
-            }
-        },
-            canExecute: (_) => !IsRunning);
+        var canExecuteStart = this.WhenAnyValue(
+            vm => vm.Min,
+            vm => vm.Max,
+            vm => vm.IsRunning,
+            (min, max, isRunning) => min < max && !isRunning );
+        var canExecuteStopAndPause = this.WhenAnyValue(vm => vm.IsRunning);
         
-        CommandStop = new LambdaCommand(
-            execute: async void (_) =>
-        {
-            try
-            {
-                await _cts!.CancelAsync();
-
-                _isPaused = false;
-                IsRunning = !IsRunning;
-            }
-            catch (Exception e)
-            {
-                // ignore
-            }
-            finally
-            {
-                _cts!.Dispose();
-            }
-        },
-            canExecute: (_) => IsRunning);
-        
-        CommandPause = new LambdaCommand(execute: async void (_) =>
-        {
-            try
-            {
-                await _cts!.CancelAsync();
-
-                _isPaused = true;
-                IsRunning = !IsRunning;
-            }
-            catch (Exception e)
-            {
-                // ignore
-            }
-            finally
-            {
-                _cts!.Dispose();
-            }
-        },
-            canExecute: (_) => IsRunning);
+        CommandStart = ReactiveCommand.CreateFromTask(Start, canExecuteStart);
+        CommandStop = ReactiveCommand.CreateFromTask(Stop, canExecuteStopAndPause);
+        CommandPause = ReactiveCommand.CreateFromTask(Pause, canExecuteStopAndPause);
     }
 
     #region Methods
 
+    private async Task Start()
+    {
+        try
+        {
+            IsRunning = true;
+            
+            _cts = new CancellationTokenSource();
+                
+            if (_isPaused)
+            {
+                await StartAsync(Value, Max, _progress, _cts.Token);
+            }
+            else
+            {
+                await StartAsync(Min, Max, _progress, _cts.Token);
+            }
+            
+            _isPaused = false;
+        }
+        catch (Exception e)
+        {
+            MessageBox.Show(e.Message);
+        }
+    }
+
+    private async Task Stop()
+    {
+        try
+        {
+            _isPaused = false;
+            IsRunning = !IsRunning;
+            
+            await _cts!.CancelAsync();
+        }
+        catch (Exception e)
+        {
+            // ignore
+        }
+        finally
+        {
+            _cts!.Dispose();
+        }
+    }
+
+    private async Task Pause()
+    {
+        try
+        {
+            _isPaused = true;
+            IsRunning = !IsRunning;
+            
+            await _cts!.CancelAsync();
+        }
+        catch (Exception e)
+        {
+            // ignore
+        }
+        finally
+        {
+            _cts!.Dispose();
+        }
+    }
+    
     private async Task StartAsync(int begin, int end, IProgress<int>? progress = null, CancellationToken token = default)
     {
         for (var i = begin; i <= end; i++)

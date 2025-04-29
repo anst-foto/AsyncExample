@@ -9,7 +9,9 @@ namespace AsyncExample.ViewModels;
 public class MainViewModel : ViewModelBase
 {
     private CancellationTokenSource? _cts;
-    //private bool _isPaused;
+    private readonly Progress<int> _progress;
+    
+    private bool _isPaused;
     
     #region Properties
     
@@ -46,6 +48,18 @@ public class MainViewModel : ViewModelBase
         }
     }
     
+    private bool _isRunning;
+    public bool IsRunning
+    {
+        get => _isRunning;
+        set
+        {
+            var result = SetProperty(ref _isRunning, value);
+            
+            if (!result) return;
+        }
+    }
+    
     #endregion
 
     #region Commands
@@ -63,59 +77,75 @@ public class MainViewModel : ViewModelBase
 
         Value = Min;
         
-        CommandStart = new LambdaCommand(async void (_) =>
+        _progress = new Progress<int>();
+        _progress.ProgressChanged += (_, value) => Value = value;
+        
+        CommandStart = new LambdaCommand(
+            execute: async void (_) =>
         {
             try
             {
                 _cts = new CancellationTokenSource();
                 
-                var progress = new Progress<int>();
-                progress.ProgressChanged += (_, value) => Value = value;
-
-                await StartAsync(Value, Max, progress, _cts.Token);
-                /*if (_isPaused)
+                if (_isPaused)
                 {
-                    await StartAsync(Value, Max, progress, _cts.Token);
+                    await StartAsync(Value, Max, _progress, _cts.Token);
                 }
                 else
                 {
-                    await StartAsync(Min, Max, progress, _cts.Token);
+                    await StartAsync(Min, Max, _progress, _cts.Token);
                 }
 
-                _isPaused = false;*/
+                _isPaused = false;
+                IsRunning = true;
             }
             catch (Exception e)
             {
                 MessageBox.Show(e.Message);
             }
-        });
+        },
+            canExecute: (_) => !IsRunning);
         
-        CommandStop = new LambdaCommand(async void (_) =>
+        CommandStop = new LambdaCommand(
+            execute: async void (_) =>
         {
             try
             {
-                await _cts?.CancelAsync();
-                Value = Min;
-                //_isPaused = false;
+                await _cts!.CancelAsync();
+
+                _isPaused = false;
+                IsRunning = !IsRunning;
             }
             catch (Exception e)
             {
-                MessageBox.Show(e.Message);
+                // ignore
             }
-        });
+            finally
+            {
+                _cts!.Dispose();
+            }
+        },
+            canExecute: (_) => IsRunning);
         
-        CommandPause = new LambdaCommand(async void (_) =>
+        CommandPause = new LambdaCommand(execute: async void (_) =>
         {
             try
             {
-                await _cts?.CancelAsync();
-                //_isPaused = true;
+                await _cts!.CancelAsync();
+
+                _isPaused = true;
+                IsRunning = !IsRunning;
             }
             catch (Exception e)
             {
-                MessageBox.Show(e.Message);
+                // ignore
             }
-        });
+            finally
+            {
+                _cts!.Dispose();
+            }
+        },
+            canExecute: (_) => IsRunning);
     }
 
     #region Methods
